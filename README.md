@@ -1,4 +1,4 @@
-# secret-detector-export
+# hogwash
 
 ![sniffmerge office](assets/2026-02-08-22-36-00-sniffmerge-office.png)
 
@@ -17,8 +17,8 @@ git clone --depth=1 https://github.com/trufflesecurity/trufflehog.git
 git clone --depth=1 https://github.com/gitleaks/gitleaks.git
 
 # Build and run
-go build -o secret-detector-export .
-./secret-detector-export \
+go build -o hogwash .
+./hogwash \
   -trufflehog ./trufflehog/pkg/detectors/ \
   -gitleaks ./gitleaks/config/gitleaks.toml \
   -out combined-output.json
