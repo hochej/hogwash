@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to create/use (e.g. v20260208-223000). If empty, an auto tag is generated."
+        description: "Release tag (e.g. v0.2.0). If empty, patch version is auto-bumped."
         required: false
         type: string
   schedule:
@@ -46,7 +46,20 @@ jobs:
           elif [[ -n "${{ inputs.tag || '' }}" ]]; then
             TAG="${{ inputs.tag }}"
           else
-            TAG="v$(date -u +%Y%m%d-%H%M%S)"
+            # Auto-bump: find latest vX.Y.Z tag → bump patch
+            LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+            if [[ -z "$LATEST" ]]; then
+              TAG="v0.1.0"
+            else
+              # Split v0.1.2 → 0 1 2, bump patch
+              BASE="${LATEST#v}"
+              MAJOR="${BASE%%.*}"
+              REST="${BASE#*.}"
+              MINOR="${REST%%.*}"
+              PATCH="${REST#*.}"
+              PATCH=$((PATCH + 1))
+              TAG="v${MAJOR}.${MINOR}.${PATCH}"
+            fi
           fi
 
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
@@ -160,12 +173,15 @@ jobs:
           set -euo pipefail
           TAG="${{ steps.tag.outputs.tag }}"
 
+          GL_SHA="${{ steps.generate.outputs.gl_sha }}"
+          TH_SHA="${{ steps.generate.outputs.th_sha }}"
+
           NOTES="Auto-generated from upstream sources.
 
           | Source | Commit |
           |--------|--------|
-          | gitleaks | \`${{ steps.generate.outputs.gl_sha }}\` |
-          | trufflehog | \`${{ steps.generate.outputs.th_sha }}\` |
+          | gitleaks | [\`${GL_SHA}\`](https://github.com/gitleaks/gitleaks/commit/${GL_SHA}) |
+          | trufflehog | [\`${TH_SHA}\`](https://github.com/trufflesecurity/trufflehog/commit/${TH_SHA}) |
 
           **Stats**
 
