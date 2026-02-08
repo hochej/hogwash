@@ -2,7 +2,7 @@
 
 ![sniffmerge office](assets/2026-02-08-22-36-00-sniffmerge-office.png)
 
-Scrappy little tool that mashes [TruffleHog](https://github.com/trufflesecurity/trufflehog) and [Gitleaks](https://github.com/gitleaks/gitleaks) together so you get one JSON with service keywords, API hosts, and regex patterns. Built for [Gondolin](https://github.com/nicholasgasior/gondolin)'s secret-aware env forwarding, but the full dump is there too if you want it.
+Scrappy little tool that mashes [TruffleHog](https://github.com/trufflesecurity/trufflehog) and [Gitleaks](https://github.com/gitleaks/gitleaks) together so you get one JSON with service keywords, API hosts, and regex patterns. Built for [Gondolin](https://github.com/earendil-works/gondolin)'s secret-aware env forwarding, but the full dump is there too if you want it.
 
 TruffleHog gives us the hosts, Gitleaks gives us the regexes. We don't import either project — just read their files as data.
 
