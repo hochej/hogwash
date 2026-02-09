@@ -45,6 +45,16 @@ var exactNameHostMap = map[string][]string{
 	"LINEAR_API_KEY":      {"api.linear.app"},
 	"TOGETHER_API_KEY":    {"api.together.xyz"},
 	"REPLICATE_API_TOKEN": {"api.replicate.com"},
+
+	// Common LLM/API env vars not reliably covered by keyword matching.
+	"BRAVE_API_KEY":      {"api.search.brave.com"},
+	"GEMINI_API_KEY":     {"generativelanguage.googleapis.com"},
+	"KIMI_API_KEY":       {"api.moonshot.cn"},
+	"OPENROUTER_API_KEY": {"openrouter.ai"},
+	"DEEPSEEK_API_KEY":   {"api.deepseek.com"},
+	"PERPLEXITY_API_KEY": {"api.perplexity.ai"},
+	"GROQ_API_KEY":       {"api.groq.com"},
+	"TOGETHER_X_API_KEY": {"api.together.xyz"},
 }
 
 // toGondolinExport transforms a full CombinedExport into the slim Gondolin format.
