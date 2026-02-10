@@ -1,10 +1,17 @@
 hogwash
 secret-detector-export
 *.exe
+
+# Local/generated outputs
 combined-output.json
-*.json
-!go.sum
-gitleaks/
-trufflehog/
 dist/
+
+# Locally cloned upstream repos (repo root)
+/gitleaks/
+/trufflehog/
+
+# Local agent state
 .pi/
+
+# Local audit scratchpad
+TODO.md

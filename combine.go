@@ -9,19 +9,19 @@ import (
 // --- Output types ---
 
 type CombinedExport struct {
-	GeneratedAt time.Time        `json:"generated_at"`
-	Stats       CombinedStats    `json:"stats"`
-	Services    []CombinedSvc    `json:"services"`
-	THOnlyHosts []THOnlyEntry    `json:"th_only_hosts,omitempty"` // TH detectors with no GL match
-	GLNoHosts   []string         `json:"gl_no_hosts,omitempty"`   // GL services with no TH host
+	GeneratedAt time.Time     `json:"generated_at"`
+	Stats       CombinedStats `json:"stats"`
+	Services    []CombinedSvc `json:"services"`
+	THOnlyHosts []THOnlyEntry `json:"th_only_hosts,omitempty"` // TH detectors with no GL match
+	GLNoHosts   []string      `json:"gl_no_hosts,omitempty"`   // GL services with no TH host
 }
 
 type CombinedStats struct {
 	TotalServices     int `json:"total_services"`      // GL services + TH-only services
-	ServicesWithHosts int `json:"services_with_hosts"`  // have both regex and hosts
-	ServicesNoHosts   int `json:"services_no_hosts"`    // GL rules but no TH hosts
-	THOnlyServices    int `json:"th_only_services"`     // TH hosts but no GL rules
-	TotalRules        int `json:"total_rules"`          // GL rules total
+	ServicesWithHosts int `json:"services_with_hosts"` // have both regex and hosts
+	ServicesNoHosts   int `json:"services_no_hosts"`   // GL rules but no TH hosts
+	THOnlyServices    int `json:"th_only_services"`    // TH hosts but no GL rules
+	TotalRules        int `json:"total_rules"`         // GL rules total
 	RulesWithHosts    int `json:"rules_with_hosts"`
 	MatchExact        int `json:"match_exact"`
 	MatchPrefix       int `json:"match_prefix"`
@@ -98,6 +98,8 @@ func combine(thDetectors []THDetector, glRules []GLRule) CombinedExport {
 	}
 	sort.Strings(glKeywords)
 
+	thKeywordsSorted := sortedKeysFromEntries(thByKeyword)
+
 	// Match GL groups to TH entries
 	var services []CombinedSvc
 	var stats CombinedStats
@@ -105,7 +107,7 @@ func combine(thDetectors []THDetector, glRules []GLRule) CombinedExport {
 
 	for _, normKey := range glKeywords {
 		glg := glGroupMap[normKey]
-		matchedTH, matchType := findTHMatch(glg.keyword, thByKeyword)
+		matchedTH, matchType := findTHMatch(glg.keyword, thByKeyword, thKeywordsSorted)
 
 		// Collect hosts and mark TH entries as used
 		hostSet := make(map[string]bool)
@@ -196,7 +198,7 @@ func combine(thDetectors []THDetector, glRules []GLRule) CombinedExport {
 
 // findTHMatch finds TruffleHog keyword matches for a Gitleaks service keyword.
 // Returns (list of matched TH normalized keywords, match type).
-func findTHMatch(glKeyword string, thByKeyword map[string][]thEntry) ([]string, string) {
+func findTHMatch(glKeyword string, thByKeyword map[string][]thEntry, thKeywordsSorted []string) ([]string, string) {
 	glNorm := normalizeKeyword(glKeyword)
 
 	// Strategy 1: Exact match
@@ -205,7 +207,7 @@ func findTHMatch(glKeyword string, thByKeyword map[string][]thEntry) ([]string, 
 	}
 
 	// Strategy 2: Manual alias
-	if alias, ok := serviceAliases[glKeyword]; ok {
+	if alias, ok := serviceAliasesByNorm[glNorm]; ok {
 		aliasNorm := normalizeKeyword(alias)
 		if _, ok := thByKeyword[aliasNorm]; ok {
 			return []string{aliasNorm}, "alias"
@@ -215,14 +217,8 @@ func findTHMatch(glKeyword string, thByKeyword map[string][]thEntry) ([]string, 
 	// Strategy 3: Prefix match — find TH keywords that start with the GL keyword
 	// Only for keywords >= 4 chars to avoid false positives
 	if len(glNorm) >= 4 {
-		var matches []string
-		for thNorm := range thByKeyword {
-			if thNorm != glNorm && strings.HasPrefix(thNorm, glNorm) {
-				matches = append(matches, thNorm)
-			}
-		}
+		matches := prefixMatchesSorted(thKeywordsSorted, glNorm)
 		if len(matches) > 0 {
-			sort.Strings(matches)
 			return matches, "prefix"
 		}
 	}
@@ -242,4 +238,37 @@ func sortedKeys(m map[string]bool) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func sortedKeysFromEntries(m map[string][]thEntry) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func prefixMatchesSorted(sorted []string, prefix string) []string {
+	start := sort.Search(len(sorted), func(i int) bool {
+		return sorted[i] >= prefix
+	})
+	if start >= len(sorted) {
+		return nil
+	}
+	var out []string
+	for i := start; i < len(sorted); i++ {
+		k := sorted[i]
+		if !strings.HasPrefix(k, prefix) {
+			break
+		}
+		if k == prefix {
+			continue
+		}
+		out = append(out, k)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

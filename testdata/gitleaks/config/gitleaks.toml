@@ -1,0 +1,15 @@
+title = "fixture"
+
+[[rules]]
+id = "cloudflare-api-key"
+description = "Cloudflare key"
+regex = '''(?i)\bcloudflare_[a-z0-9]{16}\b'''
+secretGroup = 0
+keywords = ["cloudflare"]
+
+[[rules]]
+id = "cisco-meraki-api-key"
+description = "Meraki key"
+regex = '''(?i)\bmeraki_[a-z0-9]{16}\b'''
+secretGroup = 0
+keywords = ["meraki"]

@@ -1,6 +1,8 @@
 package main
 
 import (
+	_ "embed"
+	"encoding/json"
 	"sort"
 	"time"
 )
@@ -24,37 +26,29 @@ type GondolinExport struct {
 // stripped to the fields Gondolin actually needs.
 type ValuePattern struct {
 	ID          string   `json:"id"`
-	Keyword     string   `json:"keyword,omitempty"`      // links to keyword_host_map (present only if hosts exist)
+	Keyword     string   `json:"keyword,omitempty"`     // links to keyword_host_map (present only if hosts exist)
 	Regex       string   `json:"regex"`
-	Keywords    []string `json:"keywords,omitempty"`      // pre-filter hints (skip regex if none match as substring)
-	SecretGroup int      `json:"secret_group,omitempty"`  // which capture group holds the secret value
+	Keywords    []string `json:"keywords,omitempty"`     // pre-filter hints (skip regex if none match as substring)
+	SecretGroup int      `json:"secret_group,omitempty"` // which capture group holds the secret value
 }
 
 // exactNameHostMap contains env var names where keyword-based matching doesn't
 // work (name too short, too generic, or doesn't contain the service name).
-// From: design-secret-env-forwarding.md
 //
-// Keys are UPPER_CASE for case-insensitive lookup in the consumer.
-var exactNameHostMap = map[string][]string{
-	"NODE_AUTH_TOKEN":     {"registry.npmjs.org"},
-	"DD_API_KEY":          {"api.datadoghq.com", "*.datadoghq.com"},
-	"HF_TOKEN":            {"huggingface.co", "*.huggingface.co"},
-	"CO_API_KEY":          {"api.cohere.com"},
-	"FLY_API_TOKEN":       {"api.fly.io"},
-	"RENDER_API_KEY":      {"api.render.com"},
-	"LINEAR_API_KEY":      {"api.linear.app"},
-	"TOGETHER_API_KEY":    {"api.together.xyz"},
-	"REPLICATE_API_TOKEN": {"api.replicate.com"},
+// Loaded from data/exact_name_host_map.json so policy data can evolve without
+// editing Go source.
+//
+//go:embed data/exact_name_host_map.json
+var exactNameHostMapJSON []byte
 
-	// Common LLM/API env vars not reliably covered by keyword matching.
-	"BRAVE_API_KEY":      {"api.search.brave.com"},
-	"GEMINI_API_KEY":     {"generativelanguage.googleapis.com"},
-	"KIMI_API_KEY":       {"api.moonshot.cn"},
-	"OPENROUTER_API_KEY": {"openrouter.ai"},
-	"DEEPSEEK_API_KEY":   {"api.deepseek.com"},
-	"PERPLEXITY_API_KEY": {"api.perplexity.ai"},
-	"GROQ_API_KEY":       {"api.groq.com"},
-	"TOGETHER_X_API_KEY": {"api.together.xyz"},
+var exactNameHostMap = mustLoadExactNameHostMap()
+
+func mustLoadExactNameHostMap() map[string][]string {
+	var m map[string][]string
+	if err := json.Unmarshal(exactNameHostMapJSON, &m); err != nil {
+		panic("invalid embedded exact_name_host_map.json: " + err.Error())
+	}
+	return m
 }
 
 // toGondolinExport transforms a full CombinedExport into the slim Gondolin format.

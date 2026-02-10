@@ -118,11 +118,22 @@ var thKeywordOverrides = map[string]string{
 
 // serviceAliases maps a Gitleaks canonical keyword to a TruffleHog-derived
 // keyword for cases where the names diverge after normalization.
+//
+// Keys are normalized at init time so callers can look up by normalized
+// keyword and avoid case/format brittleness.
 var serviceAliases = map[string]string{
 	"cisco-meraki":    "meraki",
 	"maxmind-license": "maxmind",
 	"private-key":     "privatekey",
 }
+
+var serviceAliasesByNorm = func() map[string]string {
+	m := make(map[string]string, len(serviceAliases))
+	for k, v := range serviceAliases {
+		m[normalizeKeyword(k)] = v
+	}
+	return m
+}()
 
 // deriveKeywordFromGitleaksID extracts a service keyword from a hyphenated
 // Gitleaks rule ID like "openai-api-key" → "openai".

@@ -25,12 +25,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache: true
@@ -89,7 +89,11 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/gitleaks/gitleaks.git gitleaks
 
-      - name: Run tests (includes integration tests when repos are present)
+      - name: Run tests (including external integration checks)
+        env:
+          RUN_EXTERNAL_INTEGRATION: "1"
+          TH_ROOT: ./trufflehog/pkg/detectors
+          GL_PATH: ./gitleaks/config/gitleaks.toml
         run: go test -v ./...
 
       - name: Build exporter
@@ -102,23 +106,24 @@ jobs:
           set -euo pipefail
           mkdir -p dist
 
-          # Full export — capture stderr for stats
+          # Full export + machine-readable stats
           ./hogwash \
             -trufflehog ./trufflehog/pkg/detectors/ \
             -gitleaks ./gitleaks/config/gitleaks.toml \
             -mode full \
             -out dist/secret-mapping.full.json \
-            -force 2> dist/full-stderr.txt
+            -stats-json dist/full-stats.json \
+            -force
 
-          # Gondolin export — capture stderr for stats
+          # Gondolin export derived from full export (no second upstream extraction)
           ./hogwash \
-            -trufflehog ./trufflehog/pkg/detectors/ \
-            -gitleaks ./gitleaks/config/gitleaks.toml \
+            -from-full dist/secret-mapping.full.json \
             -mode gondolin \
             -out dist/secret-mapping.gondolin.json \
-            -force 2> dist/gondolin-stderr.txt
+            -stats-json dist/gondolin-stats.json \
+            -force
 
-          sha256sum dist/secret-mapping.full.json     | awk '{print $1}' > dist/secret-mapping.full.json.sha256
+          sha256sum dist/secret-mapping.full.json      | awk '{print $1}' > dist/secret-mapping.full.json.sha256
           sha256sum dist/secret-mapping.gondolin.json  | awk '{print $1}' > dist/secret-mapping.gondolin.json.sha256
 
           TH_SHA=$(git -C trufflehog rev-parse --short HEAD)
@@ -127,16 +132,15 @@ jobs:
           GL_SHA_FULL=$(git -C gitleaks rev-parse HEAD)
           SELF_SHA=$(git rev-parse HEAD)
 
-          # Extract stats from stderr
-          TOTAL_SERVICES=$(grep 'Total services:' dist/full-stderr.txt | grep -oE '[0-9]+' | head -1)
-          SERVICES_WITH_HOSTS=$(grep 'With hosts+rules:' dist/full-stderr.txt | grep -oE '[0-9]+' | head -1)
-          TOTAL_RULES=$(grep 'Total GL rules:' dist/full-stderr.txt | grep -oE '[0-9]+' | head -1)
+          # Extract stats from JSON
+          TOTAL_SERVICES=$(jq -r '.combined.total_services' dist/full-stats.json)
+          SERVICES_WITH_HOSTS=$(jq -r '.combined.services_with_hosts' dist/full-stats.json)
+          TOTAL_RULES=$(jq -r '.combined.total_rules' dist/full-stats.json)
 
-          # Extract gondolin stats from stderr
-          KEYWORD_HOSTS=$(grep 'Keyword.*host mappings:' dist/gondolin-stderr.txt | grep -oE '[0-9]+')
-          EXACT_NAME_HOSTS=$(grep 'Exact-name mappings:' dist/gondolin-stderr.txt | grep -oE '[0-9]+')
-          VALUE_PATTERNS=$(grep 'Value patterns:' dist/gondolin-stderr.txt | grep -oE '[0-9]+' | head -1)
-          LINKED_PATTERNS=$(grep 'Value patterns:' dist/gondolin-stderr.txt | grep -oE '[0-9]+' | tail -1)
+          KEYWORD_HOSTS=$(jq -r '.gondolin.keyword_host_mappings' dist/gondolin-stats.json)
+          EXACT_NAME_HOSTS=$(jq -r '.gondolin.exact_name_mappings' dist/gondolin-stats.json)
+          VALUE_PATTERNS=$(jq -r '.gondolin.value_patterns' dist/gondolin-stats.json)
+          LINKED_PATTERNS=$(jq -r '.gondolin.linked_patterns' dist/gondolin-stats.json)
 
           # Write outputs for release step
           echo "th_sha=${TH_SHA}" >> "$GITHUB_OUTPUT"
@@ -165,7 +169,7 @@ jobs:
           EOF
 
       - name: Upload workflow artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: secret-mapping-${{ steps.tag.outputs.tag }}
           path: |
@@ -173,6 +177,8 @@ jobs:
             dist/secret-mapping.full.json.sha256
             dist/secret-mapping.gondolin.json
             dist/secret-mapping.gondolin.json.sha256
+            dist/full-stats.json
+            dist/gondolin-stats.json
             dist/metadata.json
 
       - name: Create/update GitHub release + upload assets

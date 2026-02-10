@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -88,13 +90,34 @@ func TestCombineAliasMatch(t *testing.T) {
 	}
 }
 
-func TestCombinePrefixMatch(t *testing.T) {
-	// This tests the case where TH keyword is a prefix-derived match
-	// After suffix stripping, most matches are exact now, but prefix
-	// matching is still useful as a fallback
+func TestCombineAliasMatchNormalizedKeyword(t *testing.T) {
 	thDetectors := []THDetector{
-		{DirName: "foobartoken", Keyword: "foobar", Hosts: []string{"api.foobar.com"}},
-		{DirName: "foobarsecret", Keyword: "foobar", Hosts: []string{"auth.foobar.com"}},
+		{DirName: "meraki", Keyword: "meraki", Hosts: []string{"api.meraki.com"}},
+	}
+
+	// Same logical service as cisco-meraki but different casing to validate
+	// normalized alias lookup.
+	glRules := []GLRule{
+		{ID: "cisco-meraki-api-key", Keyword: "Cisco-Meraki", Regex: `[a-f0-9]{40}`},
+	}
+
+	export := combine(thDetectors, glRules)
+	if export.Stats.MatchAlias != 1 {
+		t.Fatalf("MatchAlias = %d, want 1", export.Stats.MatchAlias)
+	}
+	if len(export.Services) != 1 || len(export.Services[0].Hosts) == 0 {
+		t.Fatalf("expected alias-matched hosts, got %+v", export.Services)
+	}
+}
+
+func TestCombinePrefixMatch(t *testing.T) {
+	// Prefix fallback case:
+	// GL keyword = "foobar"
+	// TH keywords = "foobarsvc" and "foobarinternal"
+	// No exact keyword and no alias should match.
+	thDetectors := []THDetector{
+		{DirName: "foobarsvc", Keyword: "foobarsvc", Hosts: []string{"api.foobarsvc.com"}},
+		{DirName: "foobarinternal", Keyword: "foobarinternal", Hosts: []string{"auth.foobarinternal.com"}},
 	}
 
 	glRules := []GLRule{
@@ -106,9 +129,14 @@ func TestCombinePrefixMatch(t *testing.T) {
 	if export.Stats.ServicesWithHosts != 1 {
 		t.Errorf("ServicesWithHosts = %d, want 1", export.Stats.ServicesWithHosts)
 	}
+	if export.Stats.MatchPrefix != 1 {
+		t.Errorf("MatchPrefix = %d, want 1", export.Stats.MatchPrefix)
+	}
 
 	svc := export.Services[0]
-	// Should have hosts from both TH detectors
+	if svc.MatchType != "prefix" {
+		t.Fatalf("match_type = %q, want prefix", svc.MatchType)
+	}
 	if len(svc.Hosts) != 2 {
 		t.Errorf("hosts count = %d, want 2, got %v", len(svc.Hosts), svc.Hosts)
 	}
@@ -140,18 +168,60 @@ func TestCombineMultipleRulesSameService(t *testing.T) {
 	}
 }
 
-// TestCombineIntegration runs the full pipeline against real data if available.
-func TestCombineIntegration(t *testing.T) {
-	thRoot := "../../trufflehog/pkg/detectors"
-	glPath := "../../gitleaks/config/gitleaks.toml"
+func TestCombineIntegrationFixtures(t *testing.T) {
+	thRoot := filepath.Join("testdata", "trufflehog", "pkg", "detectors")
+	glPath := filepath.Join("testdata", "gitleaks", "config", "gitleaks.toml")
+
+	thDetectors, skipped, warnings, err := extractTrufflehogDetectors(thRoot, THExtractOptions{})
+	if err != nil {
+		t.Fatalf("extractTrufflehogDetectors: %v", err)
+	}
+	if len(skipped) != 0 {
+		t.Fatalf("unexpected skipped detectors: %v", skipped)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("unexpected warnings: %v", warnings)
+	}
+
+	glRules, err := extractGitleaksRules(glPath)
+	if err != nil {
+		t.Fatalf("extractGitleaksRules: %v", err)
+	}
+
+	export := combine(thDetectors, glRules)
+	if export.Stats.ServicesWithHosts != 2 {
+		t.Fatalf("ServicesWithHosts = %d, want 2", export.Stats.ServicesWithHosts)
+	}
+	if export.Stats.MatchExact != 1 {
+		t.Fatalf("MatchExact = %d, want 1", export.Stats.MatchExact)
+	}
+	if export.Stats.MatchAlias != 1 {
+		t.Fatalf("MatchAlias = %d, want 1", export.Stats.MatchAlias)
+	}
+}
+
+// External integration test (opt-in).
+func TestCombineIntegrationExternal(t *testing.T) {
+	if os.Getenv("RUN_EXTERNAL_INTEGRATION") != "1" {
+		t.Skip("set RUN_EXTERNAL_INTEGRATION=1 to run against external trufflehog/gitleaks repos")
+	}
+
+	thRoot := os.Getenv("TH_ROOT")
+	if thRoot == "" {
+		thRoot = "../../trufflehog/pkg/detectors"
+	}
+	glPath := os.Getenv("GL_PATH")
+	if glPath == "" {
+		glPath = "../../gitleaks/config/gitleaks.toml"
+	}
 
 	thDetectors, _, _, err := extractTrufflehogDetectors(thRoot, THExtractOptions{})
 	if err != nil {
-		t.Skip("TruffleHog detectors not found:", err)
+		t.Fatal("TruffleHog detectors not found:", err)
 	}
 	glRules, err := extractGitleaksRules(glPath)
 	if err != nil {
-		t.Skip("Gitleaks config not found:", err)
+		t.Fatal("Gitleaks config not found:", err)
 	}
 
 	export := combine(thDetectors, glRules)
@@ -228,14 +298,12 @@ func TestCombineIntegration(t *testing.T) {
 		}
 	}
 
-	// Verify all GL regex patterns compile
+	// Verify all GL regex patterns are non-empty
 	for _, svc := range export.Services {
 		for _, r := range svc.Rules {
 			if r.Regex == "" {
 				t.Errorf("service %q rule %q has empty regex", svc.Keyword, r.ID)
 			}
-			// Note: some Gitleaks patterns use features not in Go's regexp
-			// (e.g., backreferences), so we don't test regexp.Compile here
 		}
 	}
 
@@ -249,13 +317,20 @@ func TestCombineIntegration(t *testing.T) {
 	}
 }
 
-// TestTHKeywordDerivationCoverage checks that all TH detectors get
-// reasonable keywords (not empty, not too short for major services).
-func TestTHKeywordDerivationCoverage(t *testing.T) {
-	thRoot := "../../trufflehog/pkg/detectors"
+// External coverage test (opt-in).
+func TestTHKeywordDerivationCoverageExternal(t *testing.T) {
+	if os.Getenv("RUN_EXTERNAL_INTEGRATION") != "1" {
+		t.Skip("set RUN_EXTERNAL_INTEGRATION=1 to run against external trufflehog repo")
+	}
+
+	thRoot := os.Getenv("TH_ROOT")
+	if thRoot == "" {
+		thRoot = "../../trufflehog/pkg/detectors"
+	}
+
 	thDetectors, _, _, err := extractTrufflehogDetectors(thRoot, THExtractOptions{})
 	if err != nil {
-		t.Skip("TruffleHog detectors not found:", err)
+		t.Fatal("TruffleHog detectors not found:", err)
 	}
 
 	// Count how many unique keywords we get
