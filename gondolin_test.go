@@ -57,12 +57,15 @@ func TestToGondolinExport(t *testing.T) {
 		t.Errorf("GeneratedAt mismatch")
 	}
 
-	// keyword_host_map should only have stripe (age has no hosts)
-	if len(gondolin.KeywordHostMap) != 1 {
-		t.Fatalf("KeywordHostMap length = %d, want 1", len(gondolin.KeywordHostMap))
+	// keyword_host_map should include stripe plus policy overrides (aws)
+	if len(gondolin.KeywordHostMap) != 2 {
+		t.Fatalf("KeywordHostMap length = %d, want 2", len(gondolin.KeywordHostMap))
 	}
 	if hosts, ok := gondolin.KeywordHostMap["stripe"]; !ok || len(hosts) != 1 || hosts[0] != "api.stripe.com" {
 		t.Errorf("KeywordHostMap[stripe] = %v, want [api.stripe.com]", hosts)
+	}
+	if hosts, ok := gondolin.KeywordHostMap["aws"]; !ok || len(hosts) != 2 || hosts[0] != "sts.amazonaws.com" || hosts[1] != "*.amazonaws.com" {
+		t.Errorf("KeywordHostMap[aws] = %v, want [sts.amazonaws.com *.amazonaws.com]", hosts)
 	}
 
 	// exact_name_host_map should match the hardcoded map

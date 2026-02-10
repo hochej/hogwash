@@ -26,7 +26,7 @@ type GondolinExport struct {
 // stripped to the fields Gondolin actually needs.
 type ValuePattern struct {
 	ID          string   `json:"id"`
-	Keyword     string   `json:"keyword,omitempty"`     // links to keyword_host_map (present only if hosts exist)
+	Keyword     string   `json:"keyword,omitempty"` // links to keyword_host_map (present only if hosts exist)
 	Regex       string   `json:"regex"`
 	Keywords    []string `json:"keywords,omitempty"`     // pre-filter hints (skip regex if none match as substring)
 	SecretGroup int      `json:"secret_group,omitempty"` // which capture group holds the secret value
@@ -42,6 +42,21 @@ type ValuePattern struct {
 var exactNameHostMapJSON []byte
 
 var exactNameHostMap = mustLoadExactNameHostMap()
+
+// keywordHostMapOverrides lets us explicitly add or remove runtime keyword
+// mappings when upstream detector host data is misleading or missing.
+var keywordHostMapOverrides = map[string][]string{
+	// AWS credentials are common; ensure value- and name-based detection can map
+	// to a canonical AWS domain even if extractor linkage is absent.
+	"aws": {"sts.amazonaws.com", "*.amazonaws.com"},
+}
+
+var keywordHostMapDenylist = map[string]bool{
+	// TruffleHog's private key detector reports crt.sh as a verification endpoint,
+	// but mapping generic private key vars to certificate transparency logs is
+	// not useful for env forwarding.
+	"private-key": true,
+}
 
 func mustLoadExactNameHostMap() map[string][]string {
 	var m map[string][]string
@@ -59,10 +74,18 @@ func toGondolinExport(full CombinedExport) GondolinExport {
 	hasHosts := make(map[string]bool)
 
 	for _, svc := range full.Services {
+		if keywordHostMapDenylist[svc.Keyword] {
+			continue
+		}
 		if len(svc.Hosts) > 0 {
 			keywordHosts[svc.Keyword] = svc.Hosts
 			hasHosts[normalizeKeyword(svc.Keyword)] = true
 		}
+	}
+
+	for keyword, hosts := range keywordHostMapOverrides {
+		keywordHosts[keyword] = hosts
+		hasHosts[normalizeKeyword(keyword)] = true
 	}
 
 	// Build value patterns from all GL rules

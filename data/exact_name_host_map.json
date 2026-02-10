@@ -9,6 +9,8 @@
   "TOGETHER_API_KEY": ["api.together.xyz"],
   "REPLICATE_API_TOKEN": ["api.replicate.com"],
   "BRAVE_API_KEY": ["api.search.brave.com"],
+  "AWS_ACCESS_KEY_ID": ["sts.amazonaws.com", "*.amazonaws.com"],
+  "AWS_SECRET_ACCESS_KEY": ["sts.amazonaws.com", "*.amazonaws.com"],
   "GEMINI_API_KEY": ["generativelanguage.googleapis.com"],
   "KIMI_API_KEY": ["api.moonshot.cn"],
   "OPENROUTER_API_KEY": ["openrouter.ai"],
